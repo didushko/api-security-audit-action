@@ -3,13 +3,12 @@
  Licensed under the GNU Affero General Public License version 3. See LICENSE.txt in the project root for license information.
 */
 
-import { extname, resolve } from "path";
+import { resolve } from "path";
 import * as core from "@actions/core";
 import { audit } from "@xliic/cicd-core-node";
-import { produceSarif, Sarif } from "./sarif.mjs";
+import { produceSarif } from "./sarif.mjs";
 import { uploadSarif } from "./upload.mjs";
 import { Logger, Reference, SharingType } from "@xliic/cicd-core-node";
-import { existsSync, writeFileSync } from "fs";
 
 function logger(levelName: string): Logger {
   const levels = {
@@ -98,23 +97,6 @@ function getReference(): Reference | undefined {
   }
 }
 
-function checkPath(rootDir: string, path: string, extention: string = ""){
-  let absolutePath = resolve(rootDir, path);
-
-  const ext = extname(absolutePath);
-  if (ext === "") {
-    absolutePath += `.${extention}`;
-  }
-
-  if (existsSync(absolutePath)) {
-    core.setFailed(
-      `Error: File ${absolutePath} alredy exist}`
-    );
-  }
-
-  return absolutePath;
-}
-
 (async () => {
   const ignoreNetworkErrors = core.getInput("ignore-network-errors") === "true";
   try {
@@ -137,10 +119,6 @@ function checkPath(rootDir: string, path: string, extention: string = ""){
     const api_tags = core.getInput("api-tags", { required: false });
     const skipLocalChecks = core.getInput("skip-local-checks") === "true";
     const repositoryUrl = `${githubServerUrl}/${githubRepository}`;
-    const sarifReport = core.getInput("sarif-report");
-    core.setFailed("sarif report: " + sarifReport);
-    console.log("sarif report: " + sarifReport);
-    throw new Error("sarif report: " + sarifReport)
 
     const reference = getReference();
     if (!reference) {
@@ -188,26 +166,10 @@ function checkPath(rootDir: string, path: string, extention: string = ""){
       skipLocalChecks,
     });
 
-    if(sarifReport || uploadToCodeScanning !== "false"){
-      const sarif: Sarif  = await produceSarif(result.files);
-      console.log("Sarif report created");
-
-      if(sarifReport){
-        const sarifPath = checkPath(rootDir, sarifReport, "sarif");
-        try {
-          writeFileSync(sarifPath, JSON.stringify(sarif, null, 4));
-          console.log(`SARIF report was written to: "${sarifPath}"`);
-        } catch (e) {
-          core.setFailed(
-            `Can't write SARIF report to: "${sarifPath}",\n ${e}`
-          );
-        }
-      }
-
-      if (uploadToCodeScanning !== "false") {
-        core.info("Uploading results to Code Scanning");
-        await uploadSarif(sarif);
-      }
+    if (uploadToCodeScanning !== "false") {
+      core.info("Uploading results to Code Scanning");
+      const sarif = await produceSarif(result.files);
+      await uploadSarif(sarif);
     }
 
     if (!ignoreFailures) {
